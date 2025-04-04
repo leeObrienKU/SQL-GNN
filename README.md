@@ -23,5 +23,8 @@ By addressing these objectives, this research seeks to contribute a novel framew
 
 Papers reviewed
 
-
+Graph Neural Networks on Graph Databases https://arxiv.org/pdf/2411.11375v1
+RelBench https://huggingface.co/relbench ** performance **
+https://github.com/snap-stanford/relbench
+Automated Data Quality Validation in an End-to-End GNN Framework https://arxiv.org/html/2502.10667v1
 
