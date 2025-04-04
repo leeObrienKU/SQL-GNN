@@ -1,0 +1,3 @@
+!pip install transformers torch
+!pip install networkx matplotlib
+pip install torch torch-geometric pandas numpy scikit-learn plotly faiss-cpu
