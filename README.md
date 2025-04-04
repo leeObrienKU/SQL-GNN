@@ -21,5 +21,7 @@ The primary goal of this research is to design and evaluate a methodology for in
 •	Explore potential applications, such as enhancing SQL query optimization and improving analytical models in domains where relational and graph-based insights are essential.
 By addressing these objectives, this research seeks to contribute a novel framework that balances the robustness of SQL databases with the analytical power of GNNs, ensuring both efficiency and scalability for real-world applications. 
 
+Papers reviewed
+
 
 
