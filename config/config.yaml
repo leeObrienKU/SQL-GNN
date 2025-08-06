@@ -1,0 +1,14 @@
+database:
+  name: empdb
+  user: postgres
+  schema: employees
+
+profiling:
+  max_rows: 10000000
+
+batch_size: 20000
+
+experiment:
+  architecture: gcn
+  target_node: employee  # or any other node type
+  num_classes: 5         # adjust if using real labels later
