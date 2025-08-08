@@ -1,6 +1,0 @@
-networkx
-pandas
-psycopg2-binary
-tabulate
-torch
-torch-geometric
