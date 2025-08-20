@@ -1,5 +1,6 @@
 # models/trainer.py
 import time
+import os
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -178,5 +179,41 @@ def train_and_evaluate(model, data, train_loader, epochs, lr, logger, pos_thresh
 
     print(f"🧪  Test Accuracy: {test_acc:.4f}")
     print(f"🧪  Test F1 (macro): {test_f1:.4f}")
+
+    # AUC-ROC + ROC curve (attrition only)
+    try:
+        if getattr(data, "task", None) == "attrition" and int(getattr(data, "num_classes", 2)) == 2:
+            with torch.no_grad():
+                out_full = model(data).exp()[:, 1]  # positive class probabilities
+                test_mask = data.test_mask.bool() & (data.y.view(-1) >= 0)
+                y_true_auc = data.y[test_mask].detach().cpu().numpy()
+                y_scores_auc = out_full[test_mask].detach().cpu().numpy()
+
+            from sklearn.metrics import roc_auc_score
+            auc_score = roc_auc_score(y_true_auc, y_scores_auc)
+
+            # Save ROC curve
+            from utils.plots import plot_roc_curve
+            out_dir = getattr(logger, "log_dir", "experiment_logs")
+            os.makedirs(out_dir, exist_ok=True)
+            roc_path = os.path.join(out_dir, "roc_curve.png")
+            plot_roc_curve(y_true_auc, y_scores_auc, roc_path)
+
+            # Log
+            logger.metrics["test_auc_roc"] = float(auc_score)
+            print(f"🧪  Test AUC-ROC: {auc_score:.4f}")
+
+            # W&B logging (if enabled)
+            if getattr(logger, "wandb_run", None) is not None:
+                try:
+                    import wandb
+                    logger.wandb_run.log({
+                        "test/auc_roc": float(auc_score),
+                        "plots/roc_curve": wandb.Image(roc_path)
+                    })
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     return test_acc

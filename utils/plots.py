@@ -74,3 +74,22 @@ def plot_confusion_matrix(cm, class_names, out_path, normalize=False):
     plt.tight_layout()
     plt.savefig(out_path)
     plt.close()
+
+
+def plot_roc_curve(y_true, y_scores, save_path):
+    from sklearn.metrics import roc_auc_score, roc_curve
+    import matplotlib.pyplot as plt
+
+    fpr, tpr, _ = roc_curve(y_true, y_scores)
+    auc_score = roc_auc_score(y_true, y_scores)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, label=f'ROC (AUC = {auc_score:.3f})')
+    plt.plot([0, 1], [0, 1], 'k--', label='Random')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve (Attrition)')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(save_path)
+    plt.close()
