@@ -133,6 +133,13 @@ def main():
                         help='Positive-class decision threshold for attrition (prob >= threshold → leaver=1).')
     parser.add_argument('--auto_threshold', action='store_true',
                         help='If set for attrition, choose threshold on validation set to maximize macro-F1.')
+    parser.add_argument('--threshold_mode', type=str, default=None,
+                        choices=['fixed', 'max_f1', 'target_precision', 'target_recall'],
+                        help='How to select decision threshold for attrition (defaults to fixed unless --auto_threshold is set, which maps to max_f1).')
+    parser.add_argument('--target_precision', type=float, default=None,
+                        help='Target precision for threshold_mode=target_precision (0-1).')
+    parser.add_argument('--target_recall', type=float, default=None,
+                        help='Target recall for threshold_mode=target_recall (0-1).')
 
     # W&B integration flags
     parser.add_argument('--wandb', action='store_true',
@@ -265,6 +272,11 @@ def main():
         shuffle=True
     )
 
+    # Derive threshold mode for backward compatibility
+    threshold_mode = args.threshold_mode
+    if threshold_mode is None:
+        threshold_mode = 'max_f1' if args.auto_threshold else 'fixed'
+
     # 6) Train & evaluate
     test_acc = train_and_evaluate(
         model=model,
@@ -275,6 +287,9 @@ def main():
         logger=logger,
         pos_threshold=args.pos_threshold,
         auto_threshold=args.auto_threshold,
+        threshold_mode=threshold_mode,
+        target_precision=args.target_precision,
+        target_recall=args.target_recall,
         lr_decay_type=args.lr_decay_type,
         lr_decay_gamma=args.lr_decay_gamma,
         lr_decay_step_size=args.lr_decay_step_size

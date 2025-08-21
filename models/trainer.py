@@ -38,6 +38,7 @@ def _evaluate(model, data, mask, threshold: float | None = None):
 
 
 def train_and_evaluate(model, data, train_loader, epochs, lr, logger, pos_threshold: float = 0.5, auto_threshold: bool = False,
+                       threshold_mode: str = 'fixed', target_precision: float | None = None, target_recall: float | None = None,
                        lr_decay_type: str = "exponential", lr_decay_gamma: float = 0.95, lr_decay_step_size: int = 20):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
@@ -153,22 +154,56 @@ def train_and_evaluate(model, data, train_loader, epochs, lr, logger, pos_thresh
     # Select decision threshold for attrition if requested
     threshold_to_use = None
     if getattr(data, "task", None) == "attrition" and int(getattr(data, "num_classes", 2)) == 2:
-        if auto_threshold:
-            # sweep thresholds on validation set to maximize macro-F1
-            candidates = torch.linspace(0.1, 0.9, steps=17).tolist()
-            best_f1 = -1.0
-            best_thr = pos_threshold
+        mode = (threshold_mode or 'fixed').lower()
+        if auto_threshold and mode == 'fixed':
+            mode = 'max_f1'
+        if mode == 'max_f1':
+            candidates = torch.linspace(0.05, 0.95, steps=19).tolist()
+            best_f1, best_thr = -1.0, pos_threshold
             for thr in candidates:
                 _, f1_val, _, _, _ = _evaluate(model, data, data.val_mask, thr)
                 if f1_val > best_f1 + 1e-9:
-                    best_f1 = f1_val
-                    best_thr = thr
+                    best_f1, best_thr = f1_val, thr
             threshold_to_use = float(best_thr)
             logger.metrics["best_threshold_val_f1"] = float(best_f1)
-            logger.metrics["best_threshold"] = float(threshold_to_use)
+            logger.metrics["best_threshold_mode"] = 'max_f1'
+        elif mode in ('target_precision', 'target_recall'):
+            # Use validation set to pick threshold achieving target metric
+            # Sweep thresholds and compute metrics using argmax on thresholded proba
+            with torch.no_grad():
+                out_full = model(data).exp()[:, 1]
+                val_mask = data.val_mask.bool() & (data.y.view(-1) >= 0)
+                y_true_v = data.y[val_mask].cpu().numpy()
+                y_scores_v = out_full[val_mask].cpu().numpy()
+            import numpy as np
+            thresholds = np.linspace(0.05, 0.95, 181)
+            from sklearn.metrics import precision_score, recall_score
+            picked = pos_threshold
+            if mode == 'target_precision' and target_precision is not None:
+                best_gap = 1e9
+                for thr in thresholds:
+                    y_pred_v = (y_scores_v >= thr).astype(int)
+                    p = precision_score(y_true_v, y_pred_v, zero_division=0)
+                    gap = abs(p - float(target_precision))
+                    if gap < best_gap:
+                        best_gap, picked = gap, thr
+                logger.metrics["best_threshold_mode"] = 'target_precision'
+                logger.metrics["target_precision"] = float(target_precision)
+            elif mode == 'target_recall' and target_recall is not None:
+                best_gap = 1e9
+                for thr in thresholds:
+                    y_pred_v = (y_scores_v >= thr).astype(int)
+                    r = recall_score(y_true_v, y_pred_v, zero_division=0)
+                    gap = abs(r - float(target_recall))
+                    if gap < best_gap:
+                        best_gap, picked = gap, thr
+                logger.metrics["best_threshold_mode"] = 'target_recall'
+                logger.metrics["target_recall"] = float(target_recall)
+            threshold_to_use = float(picked)
         else:
             threshold_to_use = float(pos_threshold)
-            logger.metrics["best_threshold"] = float(threshold_to_use)
+            logger.metrics["best_threshold_mode"] = 'fixed'
+        logger.metrics["best_threshold"] = float(threshold_to_use)
 
     # Final test metrics (apply threshold if available)
     test_acc, test_f1, cm, y_true_m, y_pred_m = _evaluate(model, data, data.test_mask, threshold_to_use)
