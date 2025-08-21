@@ -180,6 +180,55 @@ def analyze_attrition_patterns(cur, cutoff_date="2000-01-01"):
     print("🚪 ATTRITION ANALYSIS")
     print("=" * 80)
     
+    # First, let's see the actual date ranges in the data
+    print("📅 DATA TEMPORAL RANGE ANALYSIS:")
+    print("-" * 50)
+    
+    # Department employment date ranges
+    cur.execute("""
+        SELECT 
+            MIN(from_date) as earliest_date,
+            MAX(to_date) as latest_date,
+            COUNT(*) as total_records,
+            COUNT(CASE WHEN to_date IS NOT NULL THEN 1 END) as records_with_end_date
+        FROM employees.department_employee
+    """)
+    dept_date_range = cur.fetchone()
+    print(f"Department Employment Records:")
+    print(f"  • Date Range: {dept_date_range[0]} to {dept_date_range[1]}")
+    print(f"  • Total Records: {dept_date_range[2]:,}")
+    print(f"  • Records with End Date: {dept_date_range[3]:,}")
+    
+    # Salary date ranges
+    cur.execute("""
+        SELECT 
+            MIN(from_date) as earliest_salary,
+            MAX(to_date) as latest_salary,
+            COUNT(*) as total_salary_records
+        FROM employees.salary
+    """)
+    salary_date_range = cur.fetchone()
+    print(f"Salary Records:")
+    print(f"  • Date Range: {salary_date_range[0]} to {salary_date_range[1]}")
+    print(f"  • Total Records: {salary_date_range[2]:,}")
+    
+    # Title date ranges
+    cur.execute("""
+        SELECT 
+            MIN(from_date) as earliest_title,
+            MAX(to_date) as latest_title,
+            COUNT(*) as total_title_records
+        FROM employees.title
+    """)
+    title_date_range = cur.fetchone()
+    print(f"Title Records:")
+    print(f"  • Date Range: {title_date_range[0]} to {title_date_range[1]}")
+    print(f"  • Total Records: {title_date_range[2]:,}")
+    
+    print(f"\nCurrent Analysis Cutoff: {cutoff_date}")
+    print(f"Data Coverage: {dept_date_range[0]} to {dept_date_range[1]} ({dept_date_range[1] - dept_date_range[0] if dept_date_range[1] and dept_date_range[0] else 'Unknown'} days)")
+    print("-" * 50)
+    
     # Attrition definition: employees whose latest department assignment ended before cutoff
     cur.execute("""
         WITH latest_dept AS (
@@ -330,33 +379,65 @@ def analyze_temporal_patterns(cur):
     print("⏰ TEMPORAL PATTERN ANALYSIS")
     print("=" * 80)
     
+    # Hiring patterns over time
+    cur.execute("""
+        SELECT 
+            EXTRACT(YEAR FROM hire_date) as year,
+            COUNT(*) as new_hires,
+            COUNT(CASE WHEN gender = 'M' THEN 1 END) as male_hires,
+            COUNT(CASE WHEN gender = 'F' THEN 1 END) as female_hires
+        FROM employees.employee
+        GROUP BY EXTRACT(YEAR FROM hire_date)
+        ORDER BY year
+    """)
+    yearly_hires = cur.fetchall()
+    print("Hiring Patterns by Year:")
+    print(tabulate(yearly_hires, headers=["Year", "Total Hires", "Male", "Female"], tablefmt="grid"))
+    
     # Salary changes over time
     cur.execute("""
         SELECT 
             EXTRACT(YEAR FROM from_date) as year,
             COUNT(*) as salary_changes,
             ROUND(AVG(amount), 2) as avg_salary,
-            ROUND(STDDEV(amount), 2) as salary_std
+            ROUND(STDDEV(amount), 2) as salary_std,
+            ROUND(MIN(amount), 2) as min_salary,
+            ROUND(MAX(amount), 2) as max_salary
         FROM employees.salary
         GROUP BY EXTRACT(YEAR FROM from_date)
         ORDER BY year
     """)
     yearly_salary = cur.fetchall()
-    print("Salary Changes by Year:")
-    print(tabulate(yearly_salary, headers=["Year", "Changes", "Avg Salary", "Std Dev"], tablefmt="grid"))
+    print("\nSalary Changes by Year:")
+    print(tabulate(yearly_salary, headers=["Year", "Changes", "Avg Salary", "Std Dev", "Min", "Max"], tablefmt="grid"))
     
     # Department changes over time
     cur.execute("""
         SELECT 
             EXTRACT(YEAR FROM from_date) as year,
-            COUNT(*) as dept_changes
+            COUNT(*) as dept_changes,
+            COUNT(DISTINCT employee_id) as employees_affected
         FROM employees.department_employee
         GROUP BY EXTRACT(YEAR FROM from_date)
         ORDER BY year
     """)
     yearly_dept_changes = cur.fetchall()
     print("\nDepartment Changes by Year:")
-    print(tabulate(yearly_dept_changes, headers=["Year", "Department Changes"], tablefmt="grid"))
+    print(tabulate(yearly_dept_changes, headers=["Year", "Department Changes", "Employees Affected"], tablefmt="grid"))
+    
+    # Title changes over time
+    cur.execute("""
+        SELECT 
+            EXTRACT(YEAR FROM from_date) as year,
+            COUNT(*) as title_changes,
+            COUNT(DISTINCT employee_id) as employees_promoted
+        FROM employees.title
+        GROUP BY EXTRACT(YEAR FROM from_date)
+        ORDER BY year
+    """)
+    yearly_titles = cur.fetchall()
+    print("\nTitle Changes by Year:")
+    print(tabulate(yearly_titles, headers=["Year", "Title Changes", "Employees Promoted"], tablefmt="grid"))
 
 def generate_summary_report(cur):
     """Generate a comprehensive summary report"""
@@ -423,7 +504,7 @@ def save_eda_report(cur, filename="eda_report.txt"):
         sys.stdout = old_stdout
         captured_output.close()
 
-def inspect_database():
+def inspect_database(cutoff_date="2000-01-01"):
     """Main function to run comprehensive EDA"""
     conn = connect_to_db()
     if not conn:
@@ -434,13 +515,17 @@ def inspect_database():
         
         print("✅ Connected to PostgreSQL")
         print("🔍 Running comprehensive EDA for attrition analysis...\n")
+        print(f"📅 Analysis Configuration:")
+        print(f"   • Cutoff Date: {cutoff_date}")
+        print(f"   • This date separates 'stayers' (still employed) from 'leavers' (left before this date)")
+        print()
         
         # Run all analyses
         get_table_overview(cur)
         analyze_employee_demographics(cur)
         analyze_departments(cur)
         analyze_salary_distribution(cur)
-        analyze_attrition_patterns(cur)
+        analyze_attrition_patterns(cur, cutoff_date)
         analyze_temporal_patterns(cur)
         generate_summary_report(cur)
         
@@ -455,4 +540,13 @@ def inspect_database():
         conn.close()
 
 if __name__ == "__main__":
-    inspect_database()
+    import sys
+    
+    # Allow command line argument for cutoff date
+    cutoff = "2000-01-01"  # default
+    if len(sys.argv) > 1:
+        cutoff = sys.argv[1]
+        print(f"Using cutoff date: {cutoff}")
+    
+    inspect_database(cutoff)
+
