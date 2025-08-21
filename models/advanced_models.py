@@ -3,7 +3,6 @@ import torch.nn.functional as F
 from torch_geometric.nn import (
     GCNConv, GATConv, SAGEConv, 
     HeteroConv, Linear, 
-    TemporalConv, 
     HGTConv,
     RGCNConv
 )
@@ -75,33 +74,43 @@ class TemporalGNN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_snapshots=3):
         super().__init__()
         
-        self.temporal_conv = TemporalConv(
-            in_channels=input_dim,
-            out_channels=hidden_dim,
-            kernel_size=2  # look at pairs of consecutive snapshots
+        # GNN layers for each snapshot
+        self.snapshot_gnns = torch.nn.ModuleList([
+            GATConv(input_dim, hidden_dim, heads=4)
+            for _ in range(num_snapshots)
+        ])
+        
+        # LSTM to process temporal sequence
+        self.lstm = torch.nn.LSTM(
+            input_size=hidden_dim * 4,  # GAT with 4 heads
+            hidden_size=hidden_dim,
+            num_layers=2,
+            batch_first=True
         )
         
-        self.gnn1 = GATConv(hidden_dim, hidden_dim, heads=4)
-        self.gnn2 = GATConv(hidden_dim * 4, output_dim, heads=1, concat=False)
+        # Final prediction layer
+        self.out = Linear(hidden_dim, output_dim)
         self.dropout = 0.5
         
     def forward(self, data_list):
-        # Expect list of T graph snapshots
-        # Each snapshot: (x, edge_index)
-        xs = []
-        for data in data_list:
-            x = F.relu(self.gnn1(data.x, data.edge_index))
+        # Process each snapshot
+        snapshot_embeddings = []
+        for t, (data, gnn) in enumerate(zip(data_list, self.snapshot_gnns)):
+            # Apply GNN to snapshot
+            x = F.relu(gnn(data.x, data.edge_index))
             x = F.dropout(x, p=self.dropout, training=self.training)
-            xs.append(x)
+            snapshot_embeddings.append(x)
         
-        # Stack features across time
-        x = torch.stack(xs, dim=1)  # [N, T, F]
+        # Stack temporal sequence [batch, time, features]
+        x = torch.stack(snapshot_embeddings, dim=1)
         
-        # Apply temporal convolution
-        x = self.temporal_conv(x)
+        # Apply LSTM
+        x, _ = self.lstm(x)
         
-        # Final prediction using last snapshot
-        x = self.gnn2(x[:, -1], data_list[-1].edge_index)
+        # Use last temporal state for prediction
+        x = x[:, -1]  # [batch, hidden]
+        x = self.out(x)
+        
         return F.log_softmax(x, dim=1)
 
 class HierarchicalGNN(torch.nn.Module):
