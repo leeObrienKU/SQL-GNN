@@ -216,4 +216,36 @@ def train_and_evaluate(model, data, train_loader, epochs, lr, logger, pos_thresh
     except Exception:
         pass
 
+    # Precision, Recall, Specificity (attrition only)
+    try:
+        if getattr(data, "task", None) == "attrition":
+            from sklearn.metrics import precision_score, recall_score
+            precision = precision_score(y_true_m, y_pred_m, average='binary', zero_division=0)
+            recall = recall_score(y_true_m, y_pred_m, average='binary', zero_division=0)
+            specificity = recall_score(y_true_m, y_pred_m, pos_label=0, zero_division=0)
+            
+            # Log to metrics
+            logger.metrics["test_precision"] = float(precision)
+            logger.metrics["test_recall"] = float(recall)
+            logger.metrics["test_specificity"] = float(specificity)
+            
+            # Print to console
+            print(f"🧪  Test Precision: {precision:.4f}")
+            print(f"🧪  Test Recall: {recall:.4f}")
+            print(f"🧪  Test Specificity: {specificity:.4f}")
+            
+            # W&B logging (if enabled)
+            if getattr(logger, "wandb_run", None) is not None:
+                try:
+                    import wandb
+                    logger.wandb_run.log({
+                        "test/precision": float(precision),
+                        "test/recall": float(recall),
+                        "test/specificity": float(specificity)
+                    })
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     return test_acc
