@@ -7,6 +7,11 @@ networkx
 tabulate
 wandb
 
+# Visualization dependencies
+matplotlib
+plotly
+streamlit
+
 # PostgreSQL server & client (for local/Colab setup)
 # These are system packages, not pip packages, so install via apt in setup_env.sh
 # postgresql
