@@ -439,7 +439,7 @@ def analyze_temporal_patterns(cur):
     print("\nTitle Changes by Year:")
     print(tabulate(yearly_titles, headers=["Year", "Title Changes", "Employees Promoted"], tablefmt="grid"))
 
-def generate_summary_report(cur):
+def generate_summary_report(cur, cutoff_date="2000-01-01"):
     """Generate a comprehensive summary report"""
     print("\n" + "=" * 80)
     print("📋 EXECUTIVE SUMMARY")
@@ -455,23 +455,24 @@ def generate_summary_report(cur):
     cur.execute("SELECT COUNT(*) FROM employees.salary")
     total_salary_records = cur.fetchone()[0]
     
+    # Use dynamic cutoff date
     cur.execute("""
         SELECT COUNT(*) FROM employees.department_employee 
-        WHERE to_date < '2000-01-01'
-    """)
+        WHERE to_date < %s
+    """, (cutoff_date,))
     total_leavers = cur.fetchone()[0]
     
     print(f"Dataset Overview:")
     print(f"  • Total Employees: {total_emp:,}")
     print(f"  • Total Departments: {total_dept}")
     print(f"  • Salary Records: {total_salary_records:,}")
-    print(f"  • Historical Leavers (pre-2000): {total_leavers:,}")
+    print(f"  • Historical Leavers (pre-{cutoff_date}): {total_leavers:,}")
     print(f"  • Data Coverage: Comprehensive employee lifecycle data")
     print(f"  • Temporal Range: Historical data suitable for attrition prediction")
     print(f"  • Class Imbalance: Significant (stayers vs leavers)")
     print(f"  • Key Features: Demographics, salary, department, temporal patterns")
 
-def save_eda_report(cur, filename="eda_report.txt"):
+def save_eda_report(cur, cutoff_date="2000-01-01", filename="eda_report.txt"):
     """Save EDA report to file"""
     import sys
     from io import StringIO
@@ -487,9 +488,9 @@ def save_eda_report(cur, filename="eda_report.txt"):
         analyze_employee_demographics(cur)
         analyze_departments(cur)
         analyze_salary_distribution(cur)
-        analyze_attrition_patterns(cur)
+        analyze_attrition_patterns(cur, cutoff_date)
         analyze_temporal_patterns(cur)
-        generate_summary_report(cur)
+        generate_summary_report(cur, cutoff_date)
         
         # Get captured output
         report_content = captured_output.getvalue()
@@ -530,7 +531,7 @@ def inspect_database(cutoff_date="2000-01-01"):
         generate_summary_report(cur)
         
         # Save report
-        save_eda_report(cur)
+        save_eda_report(cur, cutoff_date)
         
     except Exception as e:
         print(f"❌ Error during analysis: {e}")
