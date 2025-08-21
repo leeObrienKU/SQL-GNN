@@ -282,20 +282,34 @@ def analyze_attrition_patterns(cur, cutoff_date="2000-01-01"):
                 END as is_leaver
             FROM employees.employee e
             LEFT JOIN latest_dept ld ON e.id = ld.employee_id AND ld.rn = 1
+        ),
+        tenure_buckets AS (
+            SELECT 
+                CASE 
+                    WHEN tenure_years < 2 THEN '0-2 years'
+                    WHEN tenure_years < 5 THEN '2-5 years'
+                    WHEN tenure_years < 10 THEN '5-10 years'
+                    WHEN tenure_years < 20 THEN '10-20 years'
+                    ELSE '20+ years'
+                END as tenure_bucket,
+                COUNT(*) as total_employees,
+                SUM(is_leaver) as leavers
+            FROM tenure_attrition
+            GROUP BY 
+                CASE 
+                    WHEN tenure_years < 2 THEN '0-2 years'
+                    WHEN tenure_years < 5 THEN '2-5 years'
+                    WHEN tenure_years < 10 THEN '5-10 years'
+                    WHEN tenure_years < 20 THEN '10-20 years'
+                    ELSE '20+ years'
+                END
         )
         SELECT 
-            CASE 
-                WHEN tenure_years < 2 THEN '0-2 years'
-                WHEN tenure_years < 5 THEN '2-5 years'
-                WHEN tenure_years < 10 THEN '5-10 years'
-                WHEN tenure_years < 20 THEN '10-20 years'
-                ELSE '20+ years'
-            END as tenure_bucket,
-            COUNT(*) as total_employees,
-            SUM(is_leaver) as leavers,
-            ROUND(SUM(is_leaver) * 100.0 / COUNT(*), 2) as attrition_rate
-        FROM tenure_attrition
-        GROUP BY tenure_bucket
+            tenure_bucket,
+            total_employees,
+            leavers,
+            ROUND(leavers * 100.0 / total_employees, 2) as attrition_rate
+        FROM tenure_buckets
         ORDER BY 
             CASE tenure_bucket
                 WHEN '0-2 years' THEN 1
