@@ -8,6 +8,7 @@ import torch
 from torch_geometric.loader import NeighborLoader
 
 from utils.plots import plot_training_curves, plot_confusion_matrix
+from utils.experiment_logger import ExperimentLogger
 import numpy as np
 import pandas as pd
 import networkx as nx

@@ -14,7 +14,7 @@ BASE_PARAMS="--epochs 100 \
 # 1. Employee-Employee Graph (Homogeneous)
 echo "🤝 Running Employee-Employee Graph Experiment..."
 python main.py \
-  --model GCN \
+  --model HomogeneousGNN \
   --graph_type homogeneous \
   --similarity_threshold 0.7 \
   $BASE_PARAMS \
@@ -55,11 +55,10 @@ python main.py \
   --model KGNN \
   --graph_type knowledge \
   --num_relations 5 \
-  --embedding_dim 128 \
   $BASE_PARAMS \
   --experiment_name "knowledge_graph"
 
-# Evaluation script to compare all models
+# Compare all models
 echo "📈 Running Model Comparison..."
 python compare_models.py \
   --results_dir "experiment_logs" \
