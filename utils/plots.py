@@ -93,3 +93,21 @@ def plot_roc_curve(y_true, y_scores, save_path):
     plt.grid(True)
     plt.savefig(save_path)
     plt.close()
+
+
+def plot_pr_curve(y_true, y_scores, save_path):
+    from sklearn.metrics import average_precision_score, precision_recall_curve
+    import matplotlib.pyplot as plt
+
+    precision, recall, _ = precision_recall_curve(y_true, y_scores)
+    ap = average_precision_score(y_true, y_scores)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(recall, precision, label=f'PR (AP = {ap:.3f})')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title('Precision-Recall Curve (Attrition)')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(save_path)
+    plt.close()

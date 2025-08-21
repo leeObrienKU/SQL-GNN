@@ -180,7 +180,7 @@ def train_and_evaluate(model, data, train_loader, epochs, lr, logger, pos_thresh
     print(f"🧪  Test Accuracy: {test_acc:.4f}")
     print(f"🧪  Test F1 (macro): {test_f1:.4f}")
 
-    # AUC-ROC + ROC curve (attrition only)
+    # AUC-ROC + ROC/PR curves (attrition only)
     try:
         if getattr(data, "task", None) == "attrition" and int(getattr(data, "num_classes", 2)) == 2:
             with torch.no_grad():
@@ -193,11 +193,22 @@ def train_and_evaluate(model, data, train_loader, epochs, lr, logger, pos_thresh
             auc_score = roc_auc_score(y_true_auc, y_scores_auc)
 
             # Save ROC curve
-            from utils.plots import plot_roc_curve
+            from utils.plots import plot_roc_curve, plot_pr_curve
             out_dir = getattr(logger, "log_dir", "experiment_logs")
             os.makedirs(out_dir, exist_ok=True)
             roc_path = os.path.join(out_dir, "roc_curve.png")
             plot_roc_curve(y_true_auc, y_scores_auc, roc_path)
+
+            # Save PR curve and compute AUPRC
+            pr_path = os.path.join(out_dir, "pr_curve.png")
+            try:
+                from sklearn.metrics import average_precision_score
+                ap = average_precision_score(y_true_auc, y_scores_auc)
+                plot_pr_curve(y_true_auc, y_scores_auc, pr_path)
+                logger.metrics["test_auprc"] = float(ap)
+                print(f"🧪  Test AUPRC: {ap:.4f}")
+            except Exception:
+                pass
 
             # Log
             logger.metrics["test_auc_roc"] = float(auc_score)
@@ -209,7 +220,9 @@ def train_and_evaluate(model, data, train_loader, epochs, lr, logger, pos_thresh
                     import wandb
                     logger.wandb_run.log({
                         "test/auc_roc": float(auc_score),
-                        "plots/roc_curve": wandb.Image(roc_path)
+                        "test/auprc": float(logger.metrics.get("test_auprc", 0.0)),
+                        "plots/roc_curve": wandb.Image(roc_path),
+                        "plots/pr_curve": wandb.Image(pr_path)
                     })
                 except Exception:
                     pass
