@@ -275,7 +275,7 @@ def analyze_attrition_patterns(cur, cutoff_date="2000-01-01"):
                 e.id as employee_id,
                 e.hire_date,
                 ld.to_date as last_dept_date,
-                EXTRACT(YEAR FROM %s::date - e.hire_date) as tenure_years,
+                EXTRACT(YEAR FROM AGE(%s::date, e.hire_date)) as tenure_years,
                 CASE 
                     WHEN ld.to_date < %s THEN 1 
                     ELSE 0 
