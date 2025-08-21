@@ -528,7 +528,7 @@ def inspect_database(cutoff_date="2000-01-01"):
         analyze_salary_distribution(cur)
         analyze_attrition_patterns(cur, cutoff_date)
         analyze_temporal_patterns(cur)
-        generate_summary_report(cur)
+        generate_summary_report(cur, cutoff_date)
         
         # Save report
         save_eda_report(cur, cutoff_date)
@@ -544,7 +544,7 @@ if __name__ == "__main__":
     import sys
     
     # Allow command line argument for cutoff date
-    cutoff = "2000-01-01"  # default
+    cutoff = "1999-01-01"  # default
     if len(sys.argv) > 1:
         cutoff = sys.argv[1]
         print(f"Using cutoff date: {cutoff}")
