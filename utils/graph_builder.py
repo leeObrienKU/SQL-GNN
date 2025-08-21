@@ -36,6 +36,33 @@ def _standardize(df, numeric_cols):
         df[c] = (df[c] - m) / s
     return df
 
+def _create_stratified_split(y, train_ratio=0.6, val_ratio=0.2, seed=42):
+    """Create stratified train/val/test split"""
+    rng = np.random.RandomState(seed)
+    
+    # Get indices for each class
+    classes = torch.unique(y)
+    train_idx, val_idx, test_idx = [], [], []
+    
+    for c in classes:
+        idx_c = torch.where(y == c)[0]
+        n_c = len(idx_c)
+        
+        # Shuffle indices
+        perm = rng.permutation(n_c)
+        idx_c = idx_c[perm]
+        
+        # Split sizes
+        n_train = int(train_ratio * n_c)
+        n_val = int(val_ratio * n_c)
+        
+        # Split indices
+        train_idx.extend(idx_c[:n_train].tolist())
+        val_idx.extend(idx_c[n_train:n_train + n_val].tolist())
+        test_idx.extend(idx_c[n_train + n_val:].tolist())
+    
+    return train_idx, val_idx, test_idx
+
 # ---------------------------
 # main builder
 # ---------------------------
@@ -296,12 +323,31 @@ def create_graph(
         print(f"[graph_builder] Labelled employees (dept): {matched}/{num_emp} | #classes in use: {used_classes}")
         num_classes = max(2, K)
 
+    # Create train/val/test split (only on employee nodes)
+    train_idx, val_idx, test_idx = _create_stratified_split(y_emp)
+    
+    # Create masks for all nodes (employees + departments)
+    train_mask = torch.zeros(num_emp + num_dept, dtype=torch.bool)
+    val_mask = torch.zeros(num_emp + num_dept, dtype=torch.bool)
+    test_mask = torch.zeros(num_emp + num_dept, dtype=torch.bool)
+    
+    # Set masks for employee nodes
+    train_mask[train_idx] = True
+    val_mask[val_idx] = True
+    test_mask[test_idx] = True
+
     # meta
     data = Data(x=x, edge_index=edge_index, y=y)
+    data.train_mask = train_mask
+    data.val_mask = val_mask
+    data.test_mask = test_mask
     data.num_employees = num_emp
     data.num_departments = num_dept
     data.num_classes = num_classes
     data.task = task
     data.ref_date = str(ref_date.date())
+
+    # Print split sizes
+    print(f"[graph_builder] Split sizes → train:{train_mask.sum()}, val:{val_mask.sum()}, test:{test_mask.sum()}")
 
     return data
