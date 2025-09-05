@@ -385,13 +385,13 @@ class AdvancedGraphBuilder:
         for t in time_windows:
             print(f"\nProcessing snapshot for {t}...")
             # Create graph snapshot at time t
-            snapshot_date = pd.to_datetime(t)
+            snapshot_date = self._safe_to_datetime(t)
             label_date = snapshot_date + timedelta(days=days)
             
             # Filter data to snapshot date
-            snapshot_dept_emp = dept_emp[pd.to_datetime(dept_emp['to_date']) >= snapshot_date]
-            snapshot_titles = titles[pd.to_datetime(titles['to_date']) >= snapshot_date]
-            snapshot_salaries = salaries[pd.to_datetime(salaries['to_date']) >= snapshot_date]
+            snapshot_dept_emp = dept_emp[dept_emp['to_date'].apply(self._safe_to_datetime) >= snapshot_date]
+            snapshot_titles = titles[titles['to_date'].apply(self._safe_to_datetime) >= snapshot_date]
+            snapshot_salaries = salaries[salaries['to_date'].apply(self._safe_to_datetime) >= snapshot_date]
             
             # Build graph
             snapshot = self.create_heterogeneous_graph(
@@ -430,8 +430,17 @@ class AdvancedGraphBuilder:
         
         # Edge indices
         print("\nCreating edges...")
-        data.edge_index = self._create_emp_dept_edges(employees, dept_emp)
-        data.dept_edge_index = self._create_dept_dept_edges(departments, dept_emp)
+        # Employee-employee edges (based on department similarity)
+        emp_emp_edges = self._create_emp_emp_edges(employees, dept_emp)
+        data.edge_index = emp_emp_edges
+        
+        # Department-department edges
+        dept_dept_edges = self._create_dept_dept_edges(departments, dept_emp)
+        data.dept_edge_index = dept_dept_edges
+        
+        # Employee-department edges for hierarchical connections
+        emp_dept_edges = self._create_emp_dept_edges(employees, dept_emp)
+        data.hierarchy_edge_index = emp_dept_edges
         
         # Department indices for each employee
         data.dept_idx = self._create_dept_indices(employees, dept_emp, departments)
@@ -529,6 +538,21 @@ class AdvancedGraphBuilder:
         print(f"Number of title nodes: {data['title'].num_nodes}")
         if skills is not None:
             print(f"Number of skill nodes: {data['skill'].num_nodes}")
+        
+        # Add metadata
+        data.num_node_types = 3 if skills is None else 4
+        data.num_edge_types = 2 if skills is None else 4
+        data.num_classes = 2
+        data.node_types = ['employee', 'department', 'title'] + (['skill'] if skills is not None else [])
+        data.edge_types = [
+            ('employee', 'works_in', 'department'),
+            ('employee', 'has_role', 'title')
+        ]
+        if skills is not None:
+            data.edge_types.extend([
+                ('employee', 'has_skill', 'skill'),
+                ('title', 'requires_skill', 'skill')
+            ])
         
         return data
 
@@ -645,6 +669,45 @@ class AdvancedGraphBuilder:
                 
         return labels
     
+    def _create_emp_emp_edges(self, employees, dept_emp):
+        """Create employee-employee edges based on department co-membership"""
+        emp_id_col = "emp_no" if "emp_no" in employees.columns else "id"
+        dept_id_col = "dept_no" if "dept_no" in dept_emp.columns else "id"
+        
+        # Get latest department assignments
+        latest_dept = _latest_by(
+            dept_emp,
+            by_cols=[emp_id_col],
+            sort_cols=['to_date'],
+            keep_cols=[emp_id_col, dept_id_col]
+        )
+        
+        # Group employees by department
+        dept_groups = latest_dept.groupby(dept_id_col)[emp_id_col].apply(list)
+        edge_index = []
+        
+        # Create edges between all employees in the same department
+        for dept_employees in dept_groups:
+            if len(dept_employees) > 1:
+                emp_indices = []
+                for emp_no in dept_employees:
+                    try:
+                        idx = employees[employees[emp_id_col] == emp_no].index[0]
+                        emp_indices.append(idx)
+                    except IndexError:
+                        continue
+                
+                if len(emp_indices) > 1:
+                    # Create edges between all pairs (both directions)
+                    for i in range(len(emp_indices)):
+                        for j in range(i + 1, len(emp_indices)):
+                            edge_index.append([emp_indices[i], emp_indices[j]])
+                            edge_index.append([emp_indices[j], emp_indices[i]])
+        
+        if not edge_index:
+            return torch.tensor([[], []], dtype=torch.long)
+        return torch.tensor(edge_index, dtype=torch.long).t()
+
     def _prepare_skill_features(self, skills):
         """Prepare skill features"""
         # Simple implementation - can be enhanced
