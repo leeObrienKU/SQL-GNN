@@ -473,11 +473,28 @@ def check_requirements():
             print(f"Installing {package}...")
             subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
+def save_analysis_summary(output_dir, content):
+    """Save analysis summary to a text file"""
+    summary_file = os.path.join(output_dir, "analysis_summary.txt")
+    with open(summary_file, 'w') as f:
+        f.write(content)
+    print(f"📝 Analysis summary saved to: {summary_file}")
+
 def main():
     """Run comprehensive data analysis"""
-    # Check requirements first
-    check_requirements()
-    # Create output directory
+    # Capture output for summary
+    import sys
+    from io import StringIO
+    
+    # Store original stdout
+    original_stdout = sys.stdout
+    output_capture = StringIO()
+    sys.stdout = output_capture
+    
+    try:
+        # Check requirements first
+        check_requirements()
+        # Create output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Try several possible output locations
@@ -579,6 +596,16 @@ def main():
         print(f"📁 Results saved to: {output_dir}")
         print(f"📊 View the full report at: {os.path.join(output_dir, f'eda_report_{viz.timestamp}.html')}")
         
+        # Save captured output
+        sys.stdout = original_stdout
+        output_content = output_capture.getvalue()
+        save_analysis_summary(output_dir, output_content)
+        
+        # Print final messages to actual stdout
+        print("\n✨ Analysis complete!")
+        print(f"📁 Results saved to: {output_dir}")
+        print(f"📊 View the full report at: {os.path.join(output_dir, f'eda_report_{viz.timestamp}.html')}")
+        
         # Create summary file
         with open(os.path.join(output_dir, "recommended_settings.txt"), "w") as f:
             f.write("Recommended Settings for test_attrition.sh:\n\n")
@@ -596,7 +623,10 @@ def main():
             f.write(f"    --test_cutoff {test_cutoff.strftime('%Y-%m-%d')}\"\n")
         
     finally:
-        conn.close()
+        if conn:
+            conn.close()
+        sys.stdout = original_stdout
+        output_capture.close()
 
 if __name__ == "__main__":
     main()
