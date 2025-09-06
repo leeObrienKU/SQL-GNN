@@ -6,6 +6,7 @@ from pathlib import Path
 import psycopg2
 from datetime import datetime
 import os
+from utils.eda_visualizer import EDAVisualizer
 
 def connect_to_db():
     """Establish database connection"""
@@ -468,14 +469,61 @@ def main():
         print("✅ Connected to PostgreSQL")
         print("🔍 Running comprehensive data analysis...\n")
         
+        # Initialize visualizer
+        viz = EDAVisualizer(output_dir)
+        
+        # Create entity relationship diagram
+        tables_info = {
+            'employee': {'count': cur.execute("SELECT COUNT(*) FROM employees.employee").fetchone()[0]},
+            'department': {'count': cur.execute("SELECT COUNT(*) FROM employees.department").fetchone()[0]},
+            'department_employee': {'count': cur.execute("SELECT COUNT(*) FROM employees.department_employee").fetchone()[0]},
+            'department_manager': {'count': cur.execute("SELECT COUNT(*) FROM employees.department_manager").fetchone()[0]},
+            'salary': {'count': cur.execute("SELECT COUNT(*) FROM employees.salary").fetchone()[0]},
+            'title': {'count': cur.execute("SELECT COUNT(*) FROM employees.title").fetchone()[0]}
+        }
+        viz.plot_entity_relationships(tables_info)
+        
         # Run analyses
         analyze_temporal_distribution(cur, output_dir)
         analyze_department_patterns(cur, output_dir)
         analyze_salary_patterns(cur, output_dir)
         train_cutoff, val_cutoff, test_cutoff = recommend_cutoff_dates(cur)
         
+        # Get data for correlation analysis
+        cur.execute("""
+            SELECT 
+                e.id as employee_id,
+                EXTRACT(YEAR FROM AGE(CURRENT_DATE, e.hire_date)) as tenure_years,
+                s.amount as salary,
+                t.duration_years,
+                EXTRACT(YEAR FROM s.from_date) as year
+            FROM employees.employee e
+            JOIN employees.salary s ON e.id = s.employee_id
+            JOIN (
+                SELECT 
+                    employee_id,
+                    EXTRACT(YEAR FROM AGE(to_date, from_date)) as duration_years
+                FROM employees.title
+                WHERE to_date != '9999-01-01'
+            ) t ON e.id = t.employee_id
+            WHERE s.to_date = '9999-01-01'
+        """)
+        feature_data = pd.DataFrame(cur.fetchall(), 
+                                  columns=['employee_id', 'tenure_years', 'salary', 
+                                         'title_duration', 'year'])
+        
+        # Create correlation matrix
+        viz.plot_correlation_matrix(feature_data)
+        
+        # Check for missing data
+        viz.plot_missing_data(feature_data)
+        
+        # Create HTML report
+        viz.create_html_report(f"Employee Data Analysis Report ({datetime.now().strftime('%Y-%m-%d')})")
+        
         print("\n✨ Analysis complete!")
         print(f"📁 Results saved to: {output_dir}")
+        print(f"📊 View the full report at: {os.path.join(output_dir, f'eda_report_{viz.timestamp}.html')}")
         
         # Create summary file
         with open(os.path.join(output_dir, "recommended_settings.txt"), "w") as f:
