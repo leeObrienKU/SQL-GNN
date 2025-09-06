@@ -472,12 +472,22 @@ def generate_summary_report(cur, cutoff_date="2000-01-01"):
     print(f"  • Class Imbalance: Significant (stayers vs leavers)")
     print(f"  • Key Features: Demographics, salary, department, temporal patterns")
 
-def save_eda_report(cur, cutoff_date="2000-01-01", filename="eda_report.txt"):
-    """Save EDA report to file"""
+def save_eda_report(cur, cutoff_date="2000-01-01", base_dir="/Users/lee/Edge/projects/gnn-sql/gnn_sql_project/experiment_logs"):
+    """Save EDA report to file with visualizations"""
     import sys
     from io import StringIO
+    from utils.eda_visualizer import EDAVisualizer
+    import pandas as pd
+    from datetime import datetime
     
-    # Capture all output
+    # Create timestamp for this run
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = f"{base_dir}/eda_{timestamp}"
+    
+    # Initialize visualizer
+    viz = EDAVisualizer(output_dir)
+    
+    # Capture text output
     old_stdout = sys.stdout
     captured_output = StringIO()
     sys.stdout = captured_output
@@ -495,11 +505,67 @@ def save_eda_report(cur, cutoff_date="2000-01-01", filename="eda_report.txt"):
         # Get captured output
         report_content = captured_output.getvalue()
         
-        # Save to file
-        with open(filename, 'w') as f:
+        # Save text report
+        text_report = f"{output_dir}/eda_report_{timestamp}.txt"
+        with open(text_report, 'w') as f:
             f.write(report_content)
         
-        print(f"\n✅ EDA report saved to: {filename}")
+        # Get data for visualizations
+        cur.execute("""
+            SELECT t.*, d.dept_name, s.amount as salary,
+                   EXTRACT(YEAR FROM AGE(t.to_date, t.from_date)) as duration_years
+            FROM employees.title t
+            JOIN employees.department_employee de ON t.employee_id = de.employee_id
+            JOIN employees.department d ON de.department_id = d.id
+            JOIN employees.salary s ON t.employee_id = s.employee_id
+            WHERE s.to_date > t.from_date
+        """)
+        title_data = pd.DataFrame(cur.fetchall(), columns=['employee_id', 'title', 'from_date', 'to_date', 
+                                                         'dept_name', 'salary', 'duration_years'])
+        
+        cur.execute("""
+            SELECT s.*, d.dept_name, 
+                   EXTRACT(YEAR FROM s.from_date) as year,
+                   EXTRACT(YEAR FROM AGE(s.to_date, e.hire_date)) as tenure_years
+            FROM employees.salary s
+            JOIN employees.employee e ON s.employee_id = e.id
+            JOIN employees.department_employee de ON s.employee_id = de.employee_id
+            JOIN employees.department d ON de.department_id = d.id
+            WHERE s.to_date > de.from_date
+        """)
+        salary_data = pd.DataFrame(cur.fetchall(), columns=['employee_id', 'amount', 'from_date', 'to_date',
+                                                          'dept_name', 'year', 'tenure_years'])
+        
+        # Create visualizations
+        viz.plot_entity_relationships({
+            'employee': {'count': total_emp},
+            'department': {'count': total_dept},
+            'salary': {'count': total_salary_records},
+            'title': {'count': len(title_data['title'].unique())}
+        })
+        viz.plot_salary_distribution(salary_data)
+        viz.plot_tenure_analysis(salary_data)
+        viz.plot_title_history(title_data)
+        
+        # Feature correlation analysis
+        feature_data = pd.DataFrame({
+            'tenure_years': salary_data['tenure_years'],
+            'salary': salary_data['amount'],
+            'title_duration': title_data['duration_years'],
+            'year': salary_data['year']
+        })
+        viz.plot_correlation_matrix(feature_data)
+        
+        # Missing data analysis
+        viz.plot_missing_data(pd.concat([salary_data, title_data], axis=1))
+        
+        # Create HTML report
+        viz.create_html_report(f"EDA Report {timestamp}")
+        
+        print(f"\n✅ EDA reports saved to: {output_dir}")
+        print(f"   • Text Report: eda_report_{timestamp}.txt")
+        print(f"   • HTML Report: eda_report_{timestamp}.html")
+        print(f"   • Visualizations: Various PNG files")
         
     finally:
         sys.stdout = old_stdout
