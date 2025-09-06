@@ -11,14 +11,44 @@ from utils.eda_visualizer import EDAVisualizer
 def connect_to_db():
     """Establish database connection"""
     try:
-        conn = psycopg2.connect(
-            dbname="empdb",
-            user="postgres",
-            host="/var/run/postgresql"
-        )
-        return conn
+        # Try different connection options
+        connection_params = [
+            {
+                'dbname': 'empdb',
+                'user': 'postgres',
+                'host': '/var/run/postgresql'
+            },
+            {
+                'dbname': 'empdb',
+                'user': 'postgres',
+                'host': 'localhost'
+            },
+            {
+                'dbname': 'empdb',
+                'user': 'postgres',
+                'host': '127.0.0.1'
+            }
+        ]
+        
+        last_error = None
+        for params in connection_params:
+            try:
+                conn = psycopg2.connect(**params)
+                print(f"✅ Connected to PostgreSQL at {params['host']}")
+                return conn
+            except Exception as e:
+                last_error = e
+                continue
+        
+        print("❌ Failed to connect to database:")
+        print(f"   • Last error: {last_error}")
+        print("   • Tried connecting to:")
+        for params in connection_params:
+            print(f"     - {params['host']}")
+        return None
+        
     except Exception as e:
-        print(f"❌ Database connection error: {e}")
+        print(f"❌ Unexpected database error: {e}")
         return None
 
 def analyze_temporal_distribution(cur, output_dir):
@@ -495,15 +525,16 @@ def main():
         # Initialize visualizer
         viz = EDAVisualizer(output_dir)
         
+        # Get table counts
+        tables_info = {}
+        for table in ['employee', 'department', 'department_employee', 
+                     'department_manager', 'salary', 'title']:
+            cur.execute(f"SELECT COUNT(*) FROM employees.{table}")
+            count = cur.fetchone()[0]
+            tables_info[table] = {'count': count}
+            print(f"📊 {table}: {count:,} records")
+        
         # Create entity relationship diagram
-        tables_info = {
-            'employee': {'count': cur.execute("SELECT COUNT(*) FROM employees.employee").fetchone()[0]},
-            'department': {'count': cur.execute("SELECT COUNT(*) FROM employees.department").fetchone()[0]},
-            'department_employee': {'count': cur.execute("SELECT COUNT(*) FROM employees.department_employee").fetchone()[0]},
-            'department_manager': {'count': cur.execute("SELECT COUNT(*) FROM employees.department_manager").fetchone()[0]},
-            'salary': {'count': cur.execute("SELECT COUNT(*) FROM employees.salary").fetchone()[0]},
-            'title': {'count': cur.execute("SELECT COUNT(*) FROM employees.title").fetchone()[0]}
-        }
         viz.plot_entity_relationships(tables_info)
         
         # Run analyses
