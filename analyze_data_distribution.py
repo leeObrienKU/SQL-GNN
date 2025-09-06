@@ -422,8 +422,31 @@ def recommend_cutoff_dates(cur):
     
     return split1, dates[3], split2
 
+def check_requirements():
+    """Check and install required packages"""
+    required_packages = {
+        'pandas': 'pandas',
+        'numpy': 'numpy',
+        'matplotlib': 'matplotlib',
+        'networkx': 'networkx',
+        'psycopg2': 'psycopg2-binary'
+    }
+    print("📦 Checking required packages...")
+    
+    import subprocess
+    import sys
+    
+    for module, package in required_packages.items():
+        try:
+            __import__(module)
+        except ImportError:
+            print(f"Installing {package}...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
 def main():
     """Run comprehensive data analysis"""
+    # Check requirements first
+    check_requirements()
     # Create output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     

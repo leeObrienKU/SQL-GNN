@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
 import os
 
@@ -13,8 +12,13 @@ class EDAVisualizer:
         self.timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
         
         # Set style
-        plt.style.use('seaborn')
-        sns.set_palette("husl")
+        plt.style.use('default')
+        plt.rcParams['axes.grid'] = True
+        plt.rcParams['grid.alpha'] = 0.3
+        plt.rcParams['axes.facecolor'] = 'white'
+        
+        # Set color palette
+        self.colors = ['#FF7F50', '#87CEEB', '#98FB98', '#DDA0DD', '#F0E68C']
     
     def plot_entity_relationships(self, tables_info):
         """Create entity relationship diagram"""
@@ -56,22 +60,29 @@ class EDAVisualizer:
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
         
         # 1. Overall distribution
-        sns.histplot(salary_data['amount'], bins=50, ax=ax1)
+        ax1.hist(salary_data['amount'], bins=50, color=self.colors[0], alpha=0.7)
         ax1.set_title('Salary Distribution')
         ax1.set_xlabel('Salary Amount')
+        ax1.grid(True)
         
         # 2. Box plot by department
-        sns.boxplot(x='dept_name', y='amount', data=salary_data, ax=ax2)
+        dept_data = [group['amount'].values for name, group in salary_data.groupby('dept_name')]
+        ax2.boxplot(dept_data, labels=salary_data['dept_name'].unique())
         ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45)
         ax2.set_title('Salary Distribution by Department')
+        ax2.grid(True)
         
         # 3. Salary trends over time
-        sns.lineplot(x='year', y='avg_salary', data=salary_data.groupby('year').agg({'amount': 'mean'}).reset_index(), ax=ax3)
+        yearly_avg = salary_data.groupby('year')['amount'].mean()
+        ax3.plot(yearly_avg.index, yearly_avg.values, color=self.colors[2], marker='o')
         ax3.set_title('Average Salary Trend')
+        ax3.grid(True)
         
         # 4. Salary growth distribution
-        sns.histplot(salary_data.groupby('employee_id')['amount'].pct_change(), bins=50, ax=ax4)
+        growth = salary_data.groupby('employee_id')['amount'].pct_change()
+        ax4.hist(growth.dropna(), bins=50, color=self.colors[3], alpha=0.7)
         ax4.set_title('Salary Growth Distribution')
+        ax4.grid(True)
         
         plt.tight_layout()
         plt.savefig(self.output_dir / f"salary_analysis_{self.timestamp}.png")
@@ -85,22 +96,32 @@ class EDAVisualizer:
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
         
         # 1. Overall tenure distribution
-        sns.histplot(tenure_data['tenure_years'], bins=30, ax=ax1)
+        ax1.hist(tenure_data['tenure_years'], bins=30, color=self.colors[0], alpha=0.7)
         ax1.set_title('Employee Tenure Distribution')
+        ax1.grid(True)
         
         # 2. Tenure by department
-        sns.boxplot(x='dept_name', y='tenure_years', data=tenure_data, ax=ax2)
+        dept_tenure = [group['tenure_years'].values for name, group in tenure_data.groupby('dept_name')]
+        ax2.boxplot(dept_tenure, labels=tenure_data['dept_name'].unique())
         ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45)
         ax2.set_title('Tenure by Department')
+        ax2.grid(True)
         
         # 3. Tenure vs. Salary
-        sns.scatterplot(x='tenure_years', y='salary', data=tenure_data, ax=ax3)
+        ax3.scatter(tenure_data['tenure_years'], tenure_data['salary'], 
+                   alpha=0.5, color=self.colors[2])
         ax3.set_title('Tenure vs. Salary')
+        ax3.grid(True)
         
         # 4. Attrition by tenure
-        sns.barplot(x='tenure_bucket', y='attrition_rate', data=tenure_data, ax=ax4)
-        ax4.set_xticklabels(ax4.get_xticklabels(), rotation=45)
+        tenure_groups = tenure_data.groupby('tenure_bucket')
+        attrition_rates = tenure_groups['attrition_rate'].mean()
+        ax4.bar(range(len(attrition_rates)), attrition_rates.values, 
+                color=self.colors[3], alpha=0.7)
+        ax4.set_xticks(range(len(attrition_rates)))
+        ax4.set_xticklabels(attrition_rates.index, rotation=45)
         ax4.set_title('Attrition Rate by Tenure')
+        ax4.grid(True)
         
         plt.tight_layout()
         plt.savefig(self.output_dir / f"tenure_analysis_{self.timestamp}.png")
@@ -115,22 +136,32 @@ class EDAVisualizer:
         
         # 1. Title distribution
         title_counts = title_data['title'].value_counts()
-        sns.barplot(x=title_counts.values, y=title_counts.index, ax=ax1)
+        y_pos = np.arange(len(title_counts))
+        ax1.barh(y_pos, title_counts.values, color=self.colors[0], alpha=0.7)
+        ax1.set_yticks(y_pos)
+        ax1.set_yticklabels(title_counts.index)
         ax1.set_title('Title Distribution')
+        ax1.grid(True)
         
         # 2. Title changes over time
         title_changes = title_data.groupby('year').size()
-        sns.lineplot(x=title_changes.index, y=title_changes.values, ax=ax2)
+        ax2.plot(title_changes.index, title_changes.values, 
+                 color=self.colors[1], marker='o')
         ax2.set_title('Title Changes Over Time')
+        ax2.grid(True)
         
         # 3. Title duration distribution
-        sns.histplot(title_data['duration_years'], bins=30, ax=ax3)
+        ax3.hist(title_data['duration_years'], bins=30, 
+                 color=self.colors[2], alpha=0.7)
         ax3.set_title('Title Duration Distribution')
+        ax3.grid(True)
         
         # 4. Title changes by department
-        sns.boxplot(x='dept_name', y='title_changes', data=title_data, ax=ax4)
+        dept_changes = [group['title_changes'].values for name, group in title_data.groupby('dept_name')]
+        ax4.boxplot(dept_changes, labels=title_data['dept_name'].unique())
         ax4.set_xticklabels(ax4.get_xticklabels(), rotation=45)
         ax4.set_title('Title Changes by Department')
+        ax4.grid(True)
         
         plt.tight_layout()
         plt.savefig(self.output_dir / f"title_analysis_{self.timestamp}.png")
@@ -144,8 +175,18 @@ class EDAVisualizer:
         corr = feature_data.corr()
         
         # Create heatmap
-        sns.heatmap(corr, annot=True, cmap='coolwarm', center=0,
-                   fmt='.2f', square=True, linewidths=0.5)
+        im = plt.imshow(corr, cmap='coolwarm', aspect='auto')
+        plt.colorbar(im)
+        
+        # Add correlation values
+        for i in range(len(corr)):
+            for j in range(len(corr)):
+                plt.text(j, i, f'{corr.iloc[i, j]:.2f}',
+                        ha='center', va='center')
+        
+        # Add labels
+        plt.xticks(range(len(corr.columns)), corr.columns, rotation=45)
+        plt.yticks(range(len(corr.columns)), corr.columns)
         
         plt.title('Feature Correlation Matrix')
         plt.tight_layout()
@@ -161,9 +202,12 @@ class EDAVisualizer:
         missing = missing[missing > 0].sort_values(ascending=True)
         
         # Create bar plot
-        sns.barplot(x=missing.values, y=missing.index)
+        y_pos = np.arange(len(missing))
+        plt.barh(y_pos, missing.values, color=self.colors[0], alpha=0.7)
+        plt.yticks(y_pos, missing.index)
         plt.title('Missing Data Analysis')
         plt.xlabel('Percentage Missing')
+        plt.grid(True)
         
         plt.tight_layout()
         plt.savefig(self.output_dir / f"missing_data_{self.timestamp}.png")
