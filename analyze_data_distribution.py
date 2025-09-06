@@ -425,8 +425,37 @@ def main():
     """Run comprehensive data analysis"""
     # Create output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = f"/Users/lee/Edge/projects/gnn-sql/gnn_sql_project/experiment_logs/data_analysis_{timestamp}"
+    
+    # Try several possible output locations
+    possible_dirs = [
+        os.path.join(os.getcwd(), "experiment_logs"),  # Current directory
+        "/content/experiment_logs",                     # Colab root
+        "/tmp/experiment_logs"                         # Fallback to /tmp
+    ]
+    
+    # Find first writable directory
+    output_base = None
+    for d in possible_dirs:
+        try:
+            os.makedirs(d, exist_ok=True)
+            # Test if writable
+            test_file = os.path.join(d, "test.txt")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            output_base = d
+            break
+        except (OSError, IOError):
+            continue
+    
+    if output_base is None:
+        raise RuntimeError("Could not find a writable directory for output")
+    
+    # Create analysis-specific directory
+    output_dir = os.path.join(output_base, f"data_analysis_{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
+    
+    print(f"\n📁 Output will be saved to: {output_dir}")
     
     # Connect to database
     conn = connect_to_db()
