@@ -541,11 +541,15 @@ def save_analysis_summary(output_dir, content):
         f.write(content)
     print(f"📝 Analysis summary saved to: {summary_file}")
 
-def main():
+def main(cutoff_date="2000-01-01"):
     """Run comprehensive data analysis"""
     # Capture output for summary
     import sys
     from io import StringIO
+    
+    print(f"📅 Analysis Configuration:")
+    print(f"   • Cutoff Date: {cutoff_date}")
+    print(f"   • This date separates 'stayers' (still employed) from 'leavers' (left before this date)\n")
     
     # Store original stdout
     original_stdout = sys.stdout
@@ -721,4 +725,13 @@ def main():
         output_capture.close()
 
 if __name__ == "__main__":
-    main()
+    import sys
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Run comprehensive data analysis')
+    parser.add_argument('--cutoff', type=str, default="2000-01-01",
+                      help='Cutoff date for attrition analysis (YYYY-MM-DD)')
+    args = parser.parse_args()
+    
+    main(cutoff_date=args.cutoff)
