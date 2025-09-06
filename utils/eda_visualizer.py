@@ -193,47 +193,52 @@ class EDAVisualizer:
         plt.savefig(self.output_dir / f"correlation_matrix_{self.timestamp}.png")
         plt.close()
     
-    def plot_class_imbalance(self, stayers, leavers, class_stats):
-        """Visualize class imbalance"""
+    def plot_attrition_patterns(self, current, former, status_stats, yearly_stats, dept_stats):
+        """Visualize attrition patterns"""
         plt.figure(figsize=(15, 10))
         
         # Create subplots
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
         
-        # 1. Class distribution pie chart
-        ax1.pie([stayers, leavers], labels=['Stayers', 'Leavers'], autopct='%1.1f%%',
+        # 1. Overall status distribution (pie chart)
+        ax1.pie([current, former], labels=['Current', 'Former'], autopct='%1.1f%%',
                 colors=[self.colors[0], self.colors[1]])
-        ax1.set_title('Class Distribution')
+        ax1.set_title('Employment Status Distribution')
         
-        # 2. Age distribution by class
-        stayer_stats = next(stat for stat in class_stats if stat[0] == 'Stayer')
-        leaver_stats = next(stat for stat in class_stats if stat[0] == 'Leaver')
+        # 2. Yearly attrition rate
+        years = [stat[0] for stat in yearly_stats]
+        attrition_rates = [stat[4] for stat in yearly_stats]
+        ax2.plot(years, attrition_rates, marker='o', color=self.colors[2])
+        ax2.set_title('Yearly Attrition Rate')
+        ax2.set_xlabel('Year')
+        ax2.set_ylabel('Attrition Rate (%)')
+        ax2.grid(True)
         
-        ax2.bar(['Stayers', 'Leavers'], [stayer_stats[3], leaver_stats[3]], 
-                color=[self.colors[0], self.colors[1]])
-        ax2.set_title('Average Age by Class')
-        ax2.set_ylabel('Age (years)')
+        # 3. Department turnover rates (top 5)
+        departments = [stat[0] for stat in dept_stats][:5]
+        turnover_rates = [stat[5] for stat in dept_stats][:5]
+        ax3.bar(range(len(departments)), turnover_rates, color=self.colors[3])
+        ax3.set_xticks(range(len(departments)))
+        ax3.set_xticklabels(departments, rotation=45)
+        ax3.set_title('Top 5 Department Turnover Rates')
+        ax3.set_ylabel('Turnover Rate (%)')
+        ax3.grid(True)
         
-        # 3. Tenure distribution by class
-        ax3.bar(['Stayers', 'Leavers'], [stayer_stats[4], leaver_stats[4]], 
-                color=[self.colors[0], self.colors[1]])
-        ax3.set_title('Average Tenure by Class')
-        ax3.set_ylabel('Tenure (years)')
-        
-        # 4. Gender distribution by class
+        # 4. Gender distribution by status
         x = np.arange(2)
         width = 0.35
-        ax4.bar(x - width/2, [stayer_stats[5], leaver_stats[5]], width, label='Male',
-                color=self.colors[2])
-        ax4.bar(x + width/2, [stayer_stats[6], leaver_stats[6]], width, label='Female',
-                color=self.colors[3])
+        male_counts = [stat[5] for stat in status_stats]
+        female_counts = [stat[6] for stat in status_stats]
+        ax4.bar(x - width/2, male_counts, width, label='Male', color=self.colors[0])
+        ax4.bar(x + width/2, female_counts, width, label='Female', color=self.colors[1])
         ax4.set_xticks(x)
-        ax4.set_xticklabels(['Stayers', 'Leavers'])
-        ax4.set_title('Gender Distribution by Class')
+        ax4.set_xticklabels(['Current', 'Former'])
+        ax4.set_title('Gender Distribution by Status')
         ax4.legend()
+        ax4.grid(True)
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / f"class_imbalance_{self.timestamp}.png")
+        plt.savefig(self.output_dir / f"attrition_patterns_{self.timestamp}.png")
         plt.close()
 
     def plot_missing_data(self, data):
@@ -277,6 +282,10 @@ class EDAVisualizer:
                 <img src="entity_relationships_{self.timestamp}.png" alt="Entity Relationships">
             </div>
             <div class="section">
+                <h2>Attrition Patterns</h2>
+                <img src="attrition_patterns_{self.timestamp}.png" alt="Attrition Patterns">
+            </div>
+            <div class="section">
                 <h2>Salary Analysis</h2>
                 <img src="salary_analysis_{self.timestamp}.png" alt="Salary Analysis">
             </div>
@@ -287,10 +296,6 @@ class EDAVisualizer:
             <div class="section">
                 <h2>Title Analysis</h2>
                 <img src="title_analysis_{self.timestamp}.png" alt="Title Analysis">
-            </div>
-            <div class="section">
-                <h2>Class Imbalance Analysis</h2>
-                <img src="class_imbalance_{self.timestamp}.png" alt="Class Imbalance">
             </div>
             <div class="section">
                 <h2>Feature Correlations</h2>

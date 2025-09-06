@@ -6,6 +6,7 @@ from pathlib import Path
 import psycopg2
 from datetime import datetime
 import os
+from tabulate import tabulate
 from utils.eda_visualizer import EDAVisualizer
 
 def connect_to_db():
@@ -51,13 +52,13 @@ def connect_to_db():
         print(f"❌ Unexpected database error: {e}")
         return None
 
-def analyze_class_imbalance(cur, cutoff_date):
-    """Analyze class imbalance in attrition prediction"""
+def analyze_attrition_patterns(cur):
+    """Analyze overall attrition patterns"""
     print("\n" + "=" * 80)
-    print("⚖️ CLASS IMBALANCE ANALYSIS")
+    print("🚪 ATTRITION ANALYSIS")
     print("=" * 80)
     
-    # Get attrition statistics
+    # Get overall employment status
     cur.execute("""
         WITH latest_dept AS (
             SELECT 
@@ -67,50 +68,111 @@ def analyze_class_imbalance(cur, cutoff_date):
             FROM employees.department_employee
         )
         SELECT 
-            CASE WHEN ld.to_date < %s THEN 'Leaver' ELSE 'Stayer' END as status,
+            CASE 
+                WHEN ld.to_date = '9999-01-01' THEN 'Current'
+                ELSE 'Former'
+            END as status,
             COUNT(*) as count,
             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage,
-            -- Additional demographics
-            ROUND(AVG(EXTRACT(YEAR FROM AGE(%s::date, e.birth_date))), 2) as avg_age,
-            ROUND(AVG(EXTRACT(YEAR FROM AGE(%s::date, e.hire_date))), 2) as avg_tenure,
+            ROUND(AVG(EXTRACT(YEAR FROM AGE(CURRENT_DATE, e.birth_date))), 2) as avg_age,
+            ROUND(AVG(EXTRACT(YEAR FROM AGE(CURRENT_DATE, e.hire_date))), 2) as avg_tenure,
             COUNT(CASE WHEN e.gender = 'M' THEN 1 END) as male_count,
             COUNT(CASE WHEN e.gender = 'F' THEN 1 END) as female_count
         FROM employees.employee e
         LEFT JOIN latest_dept ld ON e.id = ld.employee_id AND ld.rn = 1
-        GROUP BY CASE WHEN ld.to_date < %s THEN 'Leaver' ELSE 'Stayer' END
+        GROUP BY CASE WHEN ld.to_date = '9999-01-01' THEN 'Current' ELSE 'Former' END
         ORDER BY status
-    """, (cutoff_date, cutoff_date, cutoff_date, cutoff_date))
+    """)
     
-    class_stats = cur.fetchall()
+    status_stats = cur.fetchall()
     
-    # Calculate imbalance metrics
-    stayers = next(stat for stat in class_stats if stat[0] == 'Stayer')
-    leavers = next(stat for stat in class_stats if stat[0] == 'Leaver')
-    imbalance_ratio = stayers[1] / leavers[1]
-    
-    print("📊 Class Distribution:")
+    print("📊 Employment Status Distribution:")
     print(tabulate([(stat[0], stat[1], f"{stat[2]}%", f"{stat[3]:.1f}", f"{stat[4]:.1f}", 
                     stat[5], stat[6], f"{stat[5]/(stat[5]+stat[6])*100:.1f}%")
-                   for stat in class_stats],
-                  headers=["Class", "Count", "Percentage", "Avg Age", "Avg Tenure", 
+                   for stat in status_stats],
+                  headers=["Status", "Count", "Percentage", "Avg Age", "Avg Tenure", 
                           "Male", "Female", "Male %"],
                   tablefmt="grid"))
     
-    print("\n📈 Imbalance Metrics:")
-    print(f"  • Imbalance Ratio: {imbalance_ratio:.2f}:1 (Stayers:Leavers)")
-    print(f"  • Minority Class (Leavers): {leavers[1]:,} samples")
-    print(f"  • Majority Class (Stayers): {stayers[1]:,} samples")
+    # Get attrition patterns by year
+    cur.execute("""
+        WITH yearly_stats AS (
+            SELECT 
+                EXTRACT(YEAR FROM to_date) as year,
+                COUNT(*) as leavers,
+                COUNT(DISTINCT department_id) as departments_affected,
+                ROUND(AVG(EXTRACT(YEAR FROM AGE(to_date, from_date))), 2) as avg_tenure_at_exit
+            FROM employees.department_employee
+            WHERE to_date != '9999-01-01'
+            GROUP BY EXTRACT(YEAR FROM to_date)
+            ORDER BY year
+        )
+        SELECT 
+            year,
+            leavers,
+            departments_affected,
+            avg_tenure_at_exit,
+            ROUND(leavers * 100.0 / (
+                SELECT COUNT(DISTINCT employee_id) 
+                FROM employees.department_employee 
+                WHERE EXTRACT(YEAR FROM from_date) <= yearly_stats.year
+            ), 2) as attrition_rate
+        FROM yearly_stats
+        ORDER BY year
+    """)
     
-    print("\n💡 Recommendations:")
-    if imbalance_ratio > 3:
-        print("  • Consider using class weights in model training")
-        print("  • Evaluate using balanced accuracy or F1 score")
-        print("  • Consider SMOTE or other resampling techniques")
-    else:
-        print("  • Class imbalance is moderate, standard metrics should be suitable")
-        print("  • Monitor both classes during training")
+    yearly_stats = cur.fetchall()
+    print("\n📈 Yearly Attrition Patterns:")
+    print(tabulate(yearly_stats, 
+                  headers=["Year", "Leavers", "Depts Affected", "Avg Tenure", "Attrition Rate (%)"],
+                  tablefmt="grid"))
     
-    return stayers[1], leavers[1]
+    # Get department-wise patterns
+    cur.execute("""
+        WITH dept_stats AS (
+            SELECT 
+                d.dept_name,
+                COUNT(DISTINCT de.employee_id) as total_employees,
+                COUNT(DISTINCT CASE WHEN de.to_date = '9999-01-01' THEN de.employee_id END) as current,
+                COUNT(DISTINCT CASE WHEN de.to_date != '9999-01-01' THEN de.employee_id END) as former,
+                ROUND(AVG(EXTRACT(YEAR FROM AGE(
+                    CASE WHEN de.to_date = '9999-01-01' THEN CURRENT_DATE 
+                    ELSE de.to_date END, 
+                    de.from_date
+                ))), 2) as avg_tenure
+            FROM employees.department d
+            JOIN employees.department_employee de ON d.id = de.department_id
+            GROUP BY d.dept_name
+        )
+        SELECT 
+            dept_name,
+            total_employees,
+            current,
+            former,
+            avg_tenure,
+            ROUND(former * 100.0 / total_employees, 2) as turnover_rate
+        FROM dept_stats
+        ORDER BY turnover_rate DESC
+    """)
+    
+    dept_stats = cur.fetchall()
+    print("\n📊 Department-wise Attrition:")
+    print(tabulate(dept_stats,
+                  headers=["Department", "Total", "Current", "Former", "Avg Tenure", "Turnover Rate (%)"],
+                  tablefmt="grid"))
+    
+    # Calculate overall metrics
+    current = next(stat for stat in status_stats if stat[0] == 'Current')
+    former = next(stat for stat in status_stats if stat[0] == 'Former')
+    total = current[1] + former[1]
+    
+    print("\n📈 Key Metrics:")
+    print(f"  • Overall Turnover Rate: {(former[1]/total*100):.1f}%")
+    print(f"  • Average Tenure at Exit: {np.mean([stat[3] for stat in yearly_stats]):.1f} years")
+    print(f"  • Most Affected Department: {dept_stats[0][0]} ({dept_stats[0][5]:.1f}% turnover)")
+    print(f"  • Most Stable Department: {dept_stats[-1][0]} ({dept_stats[-1][5]:.1f}% turnover)")
+    
+    return current[1], former[1], status_stats, yearly_stats, dept_stats
 
 def analyze_temporal_distribution(cur, output_dir):
     """Analyze the temporal distribution of all events in the database"""
@@ -410,109 +472,6 @@ def analyze_salary_patterns(cur, output_dir):
     plt.savefig(os.path.join(output_dir, 'salary_metrics.png'))
     plt.close()
 
-def recommend_cutoff_dates(cur):
-    """Analyze data patterns to recommend appropriate cutoff dates"""
-    print("\n" + "=" * 80)
-    print("📅 CUTOFF DATE RECOMMENDATIONS")
-    print("=" * 80)
-    
-    # Get key temporal milestones
-    # Get all dates first
-    cur.execute("""
-        SELECT from_date
-        FROM employees.department_employee
-        WHERE from_date != '9999-01-01'
-        ORDER BY from_date
-    """)
-    dates = [row[0] for row in cur.fetchall()]
-    
-    if dates:
-        earliest_date = dates[0]
-        latest_date = dates[-1]
-        n = len(dates)
-        q1_idx = n // 4
-        median_idx = n // 2
-        q3_idx = (3 * n) // 4
-        
-        q1_date = dates[q1_idx]
-        median_date = dates[median_idx]
-        q3_date = dates[q3_idx]
-    else:
-        earliest_date = None
-        latest_date = None
-        q1_date = None
-        median_date = None
-        q3_date = None
-    
-    # Get latest actual end date
-    cur.execute("""
-        SELECT MAX(to_date)
-        FROM employees.department_employee
-        WHERE to_date != '9999-01-01'
-    """)
-    latest_actual_date = cur.fetchone()[0]
-    
-    dates = (earliest_date, latest_actual_date, q1_date, median_date, q3_date)
-    
-    # Get event distribution
-    cur.execute("""
-        WITH events AS (
-            -- Employment starts
-            SELECT from_date as event_date, 'start' as event_type
-            FROM employees.department_employee
-            UNION ALL
-            -- Employment ends (excluding current)
-            SELECT to_date, 'end'
-            FROM employees.department_employee
-            WHERE to_date != '9999-01-01'
-            UNION ALL
-            -- Salary changes
-            SELECT from_date, 'salary'
-            FROM employees.salary
-            UNION ALL
-            -- Title changes
-            SELECT from_date, 'title'
-            FROM employees.title
-        )
-        SELECT 
-            EXTRACT(YEAR FROM event_date) as year,
-            event_type,
-            COUNT(*) as count
-        FROM events
-        GROUP BY EXTRACT(YEAR FROM event_date), event_type
-        ORDER BY year, event_type
-    """)
-    events = pd.DataFrame(cur.fetchall(), columns=['year', 'event_type', 'count'])
-    
-    print("\n📊 Data Timeline:")
-    print(f"  • Earliest Date: {dates[0]}")
-    print(f"  • Latest Actual Date: {dates[1]}")
-    print(f"  • Q1 Date: {dates[2]}")
-    print(f"  • Median Date: {dates[3]}")
-    print(f"  • Q3 Date: {dates[4]}")
-    
-    # Calculate stable periods
-    stable_start = dates[2]  # Q1 date
-    stable_end = dates[4]    # Q3 date
-    split1 = dates[2] + (dates[3] - dates[2])/2  # Between Q1 and median
-    split2 = dates[3] + (dates[4] - dates[3])/2  # Between median and Q3
-    
-    print("\n📋 Recommended Cutoff Dates:")
-    print(f"  • Training Cutoff  : {split1.strftime('%Y-%m-%d')}")
-    print(f"    - Uses {events[events['year'] < split1.year]['count'].sum():,} events for training")
-    print(f"  • Validation Cutoff: {dates[3].strftime('%Y-%m-%d')}")
-    print(f"    - Uses {events[(events['year'] >= split1.year) & (events['year'] < dates[3].year)]['count'].sum():,} events for validation")
-    print(f"  • Testing Cutoff   : {split2.strftime('%Y-%m-%d')}")
-    print(f"    - Uses {events[(events['year'] >= dates[3].year) & (events['year'] < split2.year)]['count'].sum():,} events for testing")
-    
-    print("\n💡 Rationale:")
-    print("  • Training period captures early patterns and baseline behavior")
-    print("  • Validation period includes mix of stable and transition periods")
-    print("  • Testing period represents mature data patterns")
-    print("  • All periods have sufficient events for meaningful analysis")
-    
-    return split1, dates[3], split2
-
 def check_requirements():
     """Check and install required packages"""
     required_packages = {
@@ -520,7 +479,8 @@ def check_requirements():
         'numpy': 'numpy',
         'matplotlib': 'matplotlib',
         'networkx': 'networkx',
-        'psycopg2': 'psycopg2-binary'
+        'psycopg2': 'psycopg2-binary',
+        'tabulate': 'tabulate'
     }
     print("📦 Checking required packages...")
     
@@ -541,15 +501,11 @@ def save_analysis_summary(output_dir, content):
         f.write(content)
     print(f"📝 Analysis summary saved to: {summary_file}")
 
-def main(cutoff_date="2000-01-01"):
+def main():
     """Run comprehensive data analysis"""
     # Capture output for summary
     import sys
     from io import StringIO
-    
-    print(f"📅 Analysis Configuration:")
-    print(f"   • Cutoff Date: {cutoff_date}")
-    print(f"   • This date separates 'stayers' (still employed) from 'leavers' (left before this date)\n")
     
     # Store original stdout
     original_stdout = sys.stdout
@@ -623,38 +579,11 @@ def main(cutoff_date="2000-01-01"):
         analyze_department_patterns(cur, output_dir)
         analyze_salary_patterns(cur, output_dir)
         
-        # Analyze class imbalance
-        stayers, leavers = analyze_class_imbalance(cur, cutoff_date)
+        # Analyze attrition patterns
+        current, former, status_stats, yearly_stats, dept_stats = analyze_attrition_patterns(cur)
         
-        # Get detailed class statistics for visualization
-        cur.execute("""
-            WITH latest_dept AS (
-                SELECT 
-                    employee_id,
-                    to_date,
-                    ROW_NUMBER() OVER (PARTITION BY employee_id ORDER BY to_date DESC) as rn
-                FROM employees.department_employee
-            )
-            SELECT 
-                CASE WHEN ld.to_date < %s THEN 'Leaver' ELSE 'Stayer' END as status,
-                COUNT(*) as count,
-                ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage,
-                ROUND(AVG(EXTRACT(YEAR FROM AGE(%s::date, e.birth_date))), 2) as avg_age,
-                ROUND(AVG(EXTRACT(YEAR FROM AGE(%s::date, e.hire_date))), 2) as avg_tenure,
-                COUNT(CASE WHEN e.gender = 'M' THEN 1 END) as male_count,
-                COUNT(CASE WHEN e.gender = 'F' THEN 1 END) as female_count
-            FROM employees.employee e
-            LEFT JOIN latest_dept ld ON e.id = ld.employee_id AND ld.rn = 1
-            GROUP BY CASE WHEN ld.to_date < %s THEN 'Leaver' ELSE 'Stayer' END
-            ORDER BY status
-        """, (cutoff_date, cutoff_date, cutoff_date, cutoff_date))
-        class_stats = cur.fetchall()
-        
-        # Plot class imbalance
-        viz.plot_class_imbalance(stayers, leavers, class_stats)
-        
-        # Get cutoff recommendations
-        train_cutoff, val_cutoff, test_cutoff = recommend_cutoff_dates(cur)
+        # Plot attrition patterns
+        viz.plot_attrition_patterns(current, former, status_stats, yearly_stats, dept_stats)
         
         # Get data for correlation analysis
         cur.execute("""
@@ -688,10 +617,6 @@ def main(cutoff_date="2000-01-01"):
         # Create HTML report
         viz.create_html_report(f"Employee Data Analysis Report ({datetime.now().strftime('%Y-%m-%d')})")
         
-        print("\n✨ Analysis complete!")
-        print(f"📁 Results saved to: {output_dir}")
-        print(f"📊 View the full report at: {os.path.join(output_dir, f'eda_report_{viz.timestamp}.html')}")
-        
         # Save captured output
         sys.stdout = original_stdout
         output_content = output_capture.getvalue()
@@ -702,22 +627,6 @@ def main(cutoff_date="2000-01-01"):
         print(f"📁 Results saved to: {output_dir}")
         print(f"📊 View the full report at: {os.path.join(output_dir, f'eda_report_{viz.timestamp}.html')}")
         
-        # Create summary file
-        with open(os.path.join(output_dir, "recommended_settings.txt"), "w") as f:
-            f.write("Recommended Settings for test_attrition.sh:\n\n")
-            f.write("BASE_PARAMS=\"\n")
-            f.write("    --hidden_dim 256 \\\n")
-            f.write("    --num_layers 2 \\\n")
-            f.write("    --dropout 0.5 \\\n")
-            f.write("    --epochs 100 \\\n")
-            f.write("    --batch_size 2048 \\\n")
-            f.write("    --lr 0.001 \\\n")
-            f.write("    --wandb True \\\n")
-            f.write("    --wandb_project sql_to_gnn \\\n")
-            f.write(f"    --train_cutoff {train_cutoff.strftime('%Y-%m-%d')} \\\n")
-            f.write(f"    --val_cutoff {val_cutoff.strftime('%Y-%m-%d')} \\\n")
-            f.write(f"    --test_cutoff {test_cutoff.strftime('%Y-%m-%d')}\"\n")
-        
     finally:
         if conn:
             conn.close()
@@ -725,13 +634,4 @@ def main(cutoff_date="2000-01-01"):
         output_capture.close()
 
 if __name__ == "__main__":
-    import sys
-    import argparse
-    
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Run comprehensive data analysis')
-    parser.add_argument('--cutoff', type=str, default="2000-01-01",
-                      help='Cutoff date for attrition analysis (YYYY-MM-DD)')
-    args = parser.parse_args()
-    
-    main(cutoff_date=args.cutoff)
+    main()
