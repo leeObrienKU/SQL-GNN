@@ -193,6 +193,49 @@ class EDAVisualizer:
         plt.savefig(self.output_dir / f"correlation_matrix_{self.timestamp}.png")
         plt.close()
     
+    def plot_class_imbalance(self, stayers, leavers, class_stats):
+        """Visualize class imbalance"""
+        plt.figure(figsize=(15, 10))
+        
+        # Create subplots
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+        
+        # 1. Class distribution pie chart
+        ax1.pie([stayers, leavers], labels=['Stayers', 'Leavers'], autopct='%1.1f%%',
+                colors=[self.colors[0], self.colors[1]])
+        ax1.set_title('Class Distribution')
+        
+        # 2. Age distribution by class
+        stayer_stats = next(stat for stat in class_stats if stat[0] == 'Stayer')
+        leaver_stats = next(stat for stat in class_stats if stat[0] == 'Leaver')
+        
+        ax2.bar(['Stayers', 'Leavers'], [stayer_stats[3], leaver_stats[3]], 
+                color=[self.colors[0], self.colors[1]])
+        ax2.set_title('Average Age by Class')
+        ax2.set_ylabel('Age (years)')
+        
+        # 3. Tenure distribution by class
+        ax3.bar(['Stayers', 'Leavers'], [stayer_stats[4], leaver_stats[4]], 
+                color=[self.colors[0], self.colors[1]])
+        ax3.set_title('Average Tenure by Class')
+        ax3.set_ylabel('Tenure (years)')
+        
+        # 4. Gender distribution by class
+        x = np.arange(2)
+        width = 0.35
+        ax4.bar(x - width/2, [stayer_stats[5], leaver_stats[5]], width, label='Male',
+                color=self.colors[2])
+        ax4.bar(x + width/2, [stayer_stats[6], leaver_stats[6]], width, label='Female',
+                color=self.colors[3])
+        ax4.set_xticks(x)
+        ax4.set_xticklabels(['Stayers', 'Leavers'])
+        ax4.set_title('Gender Distribution by Class')
+        ax4.legend()
+        
+        plt.tight_layout()
+        plt.savefig(self.output_dir / f"class_imbalance_{self.timestamp}.png")
+        plt.close()
+
     def plot_missing_data(self, data):
         """Visualize missing data patterns"""
         plt.figure(figsize=(10, 6))
@@ -244,6 +287,10 @@ class EDAVisualizer:
             <div class="section">
                 <h2>Title Analysis</h2>
                 <img src="title_analysis_{self.timestamp}.png" alt="Title Analysis">
+            </div>
+            <div class="section">
+                <h2>Class Imbalance Analysis</h2>
+                <img src="class_imbalance_{self.timestamp}.png" alt="Class Imbalance">
             </div>
             <div class="section">
                 <h2>Feature Correlations</h2>

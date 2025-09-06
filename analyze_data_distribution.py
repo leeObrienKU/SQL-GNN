@@ -51,6 +51,67 @@ def connect_to_db():
         print(f"❌ Unexpected database error: {e}")
         return None
 
+def analyze_class_imbalance(cur, cutoff_date):
+    """Analyze class imbalance in attrition prediction"""
+    print("\n" + "=" * 80)
+    print("⚖️ CLASS IMBALANCE ANALYSIS")
+    print("=" * 80)
+    
+    # Get attrition statistics
+    cur.execute("""
+        WITH latest_dept AS (
+            SELECT 
+                employee_id,
+                to_date,
+                ROW_NUMBER() OVER (PARTITION BY employee_id ORDER BY to_date DESC) as rn
+            FROM employees.department_employee
+        )
+        SELECT 
+            CASE WHEN ld.to_date < %s THEN 'Leaver' ELSE 'Stayer' END as status,
+            COUNT(*) as count,
+            ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage,
+            -- Additional demographics
+            ROUND(AVG(EXTRACT(YEAR FROM AGE(%s::date, e.birth_date))), 2) as avg_age,
+            ROUND(AVG(EXTRACT(YEAR FROM AGE(%s::date, e.hire_date))), 2) as avg_tenure,
+            COUNT(CASE WHEN e.gender = 'M' THEN 1 END) as male_count,
+            COUNT(CASE WHEN e.gender = 'F' THEN 1 END) as female_count
+        FROM employees.employee e
+        LEFT JOIN latest_dept ld ON e.id = ld.employee_id AND ld.rn = 1
+        GROUP BY CASE WHEN ld.to_date < %s THEN 'Leaver' ELSE 'Stayer' END
+        ORDER BY status
+    """, (cutoff_date, cutoff_date, cutoff_date, cutoff_date))
+    
+    class_stats = cur.fetchall()
+    
+    # Calculate imbalance metrics
+    stayers = next(stat for stat in class_stats if stat[0] == 'Stayer')
+    leavers = next(stat for stat in class_stats if stat[0] == 'Leaver')
+    imbalance_ratio = stayers[1] / leavers[1]
+    
+    print("📊 Class Distribution:")
+    print(tabulate([(stat[0], stat[1], f"{stat[2]}%", f"{stat[3]:.1f}", f"{stat[4]:.1f}", 
+                    stat[5], stat[6], f"{stat[5]/(stat[5]+stat[6])*100:.1f}%")
+                   for stat in class_stats],
+                  headers=["Class", "Count", "Percentage", "Avg Age", "Avg Tenure", 
+                          "Male", "Female", "Male %"],
+                  tablefmt="grid"))
+    
+    print("\n📈 Imbalance Metrics:")
+    print(f"  • Imbalance Ratio: {imbalance_ratio:.2f}:1 (Stayers:Leavers)")
+    print(f"  • Minority Class (Leavers): {leavers[1]:,} samples")
+    print(f"  • Majority Class (Stayers): {stayers[1]:,} samples")
+    
+    print("\n💡 Recommendations:")
+    if imbalance_ratio > 3:
+        print("  • Consider using class weights in model training")
+        print("  • Evaluate using balanced accuracy or F1 score")
+        print("  • Consider SMOTE or other resampling techniques")
+    else:
+        print("  • Class imbalance is moderate, standard metrics should be suitable")
+        print("  • Monitor both classes during training")
+    
+    return stayers[1], leavers[1]
+
 def analyze_temporal_distribution(cur, output_dir):
     """Analyze the temporal distribution of all events in the database"""
     print("\n" + "=" * 80)
@@ -557,6 +618,38 @@ def main():
         analyze_temporal_distribution(cur, output_dir)
         analyze_department_patterns(cur, output_dir)
         analyze_salary_patterns(cur, output_dir)
+        
+        # Analyze class imbalance
+        stayers, leavers = analyze_class_imbalance(cur, cutoff_date)
+        
+        # Get detailed class statistics for visualization
+        cur.execute("""
+            WITH latest_dept AS (
+                SELECT 
+                    employee_id,
+                    to_date,
+                    ROW_NUMBER() OVER (PARTITION BY employee_id ORDER BY to_date DESC) as rn
+                FROM employees.department_employee
+            )
+            SELECT 
+                CASE WHEN ld.to_date < %s THEN 'Leaver' ELSE 'Stayer' END as status,
+                COUNT(*) as count,
+                ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage,
+                ROUND(AVG(EXTRACT(YEAR FROM AGE(%s::date, e.birth_date))), 2) as avg_age,
+                ROUND(AVG(EXTRACT(YEAR FROM AGE(%s::date, e.hire_date))), 2) as avg_tenure,
+                COUNT(CASE WHEN e.gender = 'M' THEN 1 END) as male_count,
+                COUNT(CASE WHEN e.gender = 'F' THEN 1 END) as female_count
+            FROM employees.employee e
+            LEFT JOIN latest_dept ld ON e.id = ld.employee_id AND ld.rn = 1
+            GROUP BY CASE WHEN ld.to_date < %s THEN 'Leaver' ELSE 'Stayer' END
+            ORDER BY status
+        """, (cutoff_date, cutoff_date, cutoff_date, cutoff_date))
+        class_stats = cur.fetchall()
+        
+        # Plot class imbalance
+        viz.plot_class_imbalance(stayers, leavers, class_stats)
+        
+        # Get cutoff recommendations
         train_cutoff, val_cutoff, test_cutoff = recommend_cutoff_dates(cur)
         
         # Get data for correlation analysis
