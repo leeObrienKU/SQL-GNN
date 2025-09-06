@@ -169,9 +169,21 @@ def analyze_temporal_distribution(cur, output_dir):
     plt.close()
     
     print("\n📊 Employment Duration Statistics:")
-    print(f"  • Average Duration: {np.average(duration_dist['years'], weights=duration_dist['count']):.1f} years")
-    print(f"  • Median Duration: {duration_dist['years'].iloc[duration_dist['count'].cumsum() >= duration_dist['count'].sum()/2].iloc[0]:.1f} years")
-    print(f"  • Most Common Duration: {duration_dist.loc[duration_dist['count'].idxmax(), 'years']:.1f} years")
+    # Calculate weighted average
+    avg_duration = np.average(duration_dist['years'], weights=duration_dist['count'])
+    
+    # Calculate weighted median
+    cumsum = duration_dist['count'].cumsum()
+    total = duration_dist['count'].sum()
+    median_idx = duration_dist.index[cumsum >= total/2].min()
+    median_duration = duration_dist.loc[median_idx, 'years']
+    
+    # Get mode (most common)
+    mode_duration = duration_dist.loc[duration_dist['count'].idxmax(), 'years']
+    
+    print(f"  • Average Duration: {avg_duration:.1f} years")
+    print(f"  • Median Duration: {median_duration:.1f} years")
+    print(f"  • Most Common Duration: {mode_duration:.1f} years")
 
 def analyze_department_patterns(cur, output_dir):
     """Analyze department-specific patterns"""
