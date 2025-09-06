@@ -325,16 +325,42 @@ def recommend_cutoff_dates(cur):
     print("=" * 80)
     
     # Get key temporal milestones
+    # Get all dates first
     cur.execute("""
-        SELECT 
-            MIN(from_date) as earliest_date,
-            MAX(CASE WHEN to_date != '9999-01-01' THEN to_date END) as latest_actual_date,
-            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY from_date) as q1_date,
-            PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY from_date) as median_date,
-            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY from_date) as q3_date
+        SELECT from_date
         FROM employees.department_employee
+        WHERE from_date != '9999-01-01'
+        ORDER BY from_date
     """)
-    dates = cur.fetchone()
+    dates = [row[0] for row in cur.fetchall()]
+    
+    if dates:
+        earliest_date = dates[0]
+        latest_date = dates[-1]
+        n = len(dates)
+        q1_idx = n // 4
+        median_idx = n // 2
+        q3_idx = (3 * n) // 4
+        
+        q1_date = dates[q1_idx]
+        median_date = dates[median_idx]
+        q3_date = dates[q3_idx]
+    else:
+        earliest_date = None
+        latest_date = None
+        q1_date = None
+        median_date = None
+        q3_date = None
+    
+    # Get latest actual end date
+    cur.execute("""
+        SELECT MAX(to_date)
+        FROM employees.department_employee
+        WHERE to_date != '9999-01-01'
+    """)
+    latest_actual_date = cur.fetchone()[0]
+    
+    dates = (earliest_date, latest_actual_date, q1_date, median_date, q3_date)
     
     # Get event distribution
     cur.execute("""
